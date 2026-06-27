@@ -1,0 +1,4 @@
+claim_object,min_images,requires_part_visible,notes
+car,2,true,Must show damaged area clearly from multiple angles
+laptop,1,true,Must show the specific damaged component
+package,1,false,Show exterior packaging damage
