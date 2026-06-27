@@ -280,10 +280,11 @@ async def upload_images_zip_route(
 ):
     """
     Accept a ZIP file and extract all images into dataset/images/{target}/.
-    The ZIP can contain images at any nesting level:
-      - flat: img_1.jpg → placed in dataset/images/{target}/
-      - nested: case_001/img_1.jpg → placed in dataset/images/{target}/case_001/img_1.jpg
-      - double-nested: images/test/case_001/img_1.jpg → strips the prefix
+    Handles any nesting level including:
+      - flat: img_1.jpg
+      - nested: case_001/img_1.jpg
+      - wrapped in a top-level folder: my_dataset/case_001/img_1.jpg
+      - known prefixes: images/test/case_001/img_1.jpg
     """
     import zipfile
     import io
@@ -297,31 +298,74 @@ async def upload_images_zip_route(
     try:
         zf = zipfile.ZipFile(io.BytesIO(content))
     except zipfile.BadZipFile:
-        raise HTTPException(status_code=400, detail="Invalid ZIP file")
+        raise HTTPException(status_code=400, detail="Invalid ZIP file — make sure you upload a .zip archive, not a folder")
 
     base_dir = Path("dataset") / "images" / target
+    base_dir.mkdir(parents=True, exist_ok=True)
+
+    # Collect all file entries (skip directories and hidden/metadata files)
+    all_names = [
+        n for n in zf.namelist()
+        if not n.endswith("/")
+        and not any(part.startswith(".") or part.startswith("__MACOSX") for part in Path(n).parts)
+    ]
+
+    image_names = [n for n in all_names if Path(n).suffix.lower() in IMAGE_EXTS]
+    skipped = [n for n in all_names if Path(n).suffix.lower() not in IMAGE_EXTS]
+
+    if not image_names:
+        return {
+            "success": False,
+            "extracted_count": 0,
+            "skipped_count": len(skipped),
+            "target_dir": str(base_dir),
+            "message": "No images found in ZIP. Make sure it contains .jpg/.jpeg/.png/.webp files.",
+            "files": [],
+        }
+
+    # Detect a single top-level wrapper folder that all entries share, and strip it.
+    # This handles the common case where a user zips an entire folder: my_folder/case_001/img.jpg
+    def detect_common_prefix(names: list[str]) -> tuple:
+        """Return the common leading path parts shared by every entry, if any."""
+        first_parts = Path(names[0]).parts
+        for length in range(len(first_parts), 0, -1):
+            prefix = first_parts[:length]
+            if all(Path(n).parts[:length] == prefix for n in names):
+                return prefix
+        return ()
+
+    common_prefix = detect_common_prefix(image_names)
+    # Only strip prefix when ALL images are under a single top-level folder
+    # (i.e. a non-empty common prefix whose first element is a folder, not a filename)
+    top_level_folder_prefix: tuple = ()
+    if common_prefix and len(common_prefix) >= 1:
+        # Check that the shared prefix ends before the filename (is purely a directory prefix)
+        candidate = common_prefix
+        if all(len(Path(n).parts) > len(candidate) for n in image_names):
+            top_level_folder_prefix = candidate
+
+    # Known prefixes to strip (checked after common-prefix stripping)
+    known_prefixes = [
+        ("images", target), ("images", "test"), ("images", "sample"),
+        (target,), ("test",), ("sample",),
+    ]
+
     extracted = []
-    skipped = []
 
-    for name in zf.namelist():
-        # Skip directories and hidden files
-        if name.endswith("/") or "/." in name or name.startswith("."):
-            continue
-        p = Path(name)
-        if p.suffix.lower() not in IMAGE_EXTS:
-            skipped.append(name)
-            continue
+    for name in image_names:
+        parts = Path(name).parts
 
-        # Strip common prefixes: images/test/, images/sample/, test/, sample/
-        parts = p.parts
-        strip_prefixes = [("images", target), ("images", "test"), ("images", "sample"), (target,), ("test",), ("sample",)]
-        rel_parts = parts
-        for prefix in strip_prefixes:
+        # 1. Strip auto-detected common top-level folder
+        if top_level_folder_prefix and parts[:len(top_level_folder_prefix)] == top_level_folder_prefix:
+            parts = parts[len(top_level_folder_prefix):]
+
+        # 2. Strip known prefixes
+        for prefix in known_prefixes:
             if parts[:len(prefix)] == prefix:
-                rel_parts = parts[len(prefix):]
+                parts = parts[len(prefix):]
                 break
 
-        dest = base_dir / Path(*rel_parts) if rel_parts else base_dir / p.name
+        dest = base_dir / Path(*parts) if parts else base_dir / Path(name).name
         dest.parent.mkdir(parents=True, exist_ok=True)
 
         with zf.open(name) as src, open(dest, "wb") as dst:
@@ -335,5 +379,5 @@ async def upload_images_zip_route(
         "skipped_count": len(skipped),
         "target_dir": str(base_dir),
         "message": f"Extracted {len(extracted)} images into dataset/images/{target}/",
-        "files": extracted[:50],  # return first 50 for display
+        "files": extracted[:50],
     }

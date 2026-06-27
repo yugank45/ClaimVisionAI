@@ -65,6 +65,10 @@ export default function Upload() {
   }, [])
 
   const handleZipUpload = async (file: File, target: "test" | "sample") => {
+    if (!file.name.endsWith(".zip")) {
+      toast({ title: "Invalid file", description: "Please select a .zip file.", variant: "destructive" })
+      return
+    }
     setUploadingZip(target)
     try {
       const formData = new FormData()
@@ -75,18 +79,31 @@ export default function Upload() {
         method: "POST",
         body: formData,
       })
-      const data: ZipUploadResult = await res.json()
+
+      let data: ZipUploadResult
+      try {
+        data = await res.json()
+      } catch {
+        throw new Error(`Server error (${res.status} ${res.statusText})`)
+      }
+
+      if (!res.ok) {
+        const detail = (data as unknown as { detail?: string })?.detail
+        throw new Error(detail || `Server error ${res.status}`)
+      }
 
       if (data.success) {
         toast({
           title: `✅ ${data.extracted_count} images extracted`,
-          description: `into dataset/images/${target}/`,
+          description: data.skipped_count > 0
+            ? `into dataset/images/${target}/  (${data.skipped_count} non-image files skipped)`
+            : `into dataset/images/${target}/`,
         })
         await fetchCoverage()
         queryClient.invalidateQueries({ queryKey: getGetDatasetInfoQueryKey() })
         refetchDatasetInfo()
       } else {
-        toast({ title: "Upload failed", variant: "destructive" })
+        toast({ title: "Upload failed", description: data.message, variant: "destructive" })
       }
     } catch (e) {
       toast({ title: "Upload error", description: String(e), variant: "destructive" })
