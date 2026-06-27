@@ -63,7 +63,7 @@ def check_blur(image_path: str) -> tuple[float, bool]:
 
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
-        is_blurry = laplacian_var < 100.0
+        is_blurry = bool(laplacian_var < 100.0)
         return float(laplacian_var), is_blurry
     except ImportError:
         logger.warning("OpenCV not available, skipping blur detection")
@@ -113,6 +113,6 @@ def check_dark_image(image_path: str) -> bool:
 
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         avg_brightness = np.mean(gray)
-        return avg_brightness < 30
+        return bool(avg_brightness < 30)
     except Exception:
         return False

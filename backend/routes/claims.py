@@ -46,12 +46,12 @@ def _claim_to_dict(c: Claim) -> dict:
                 "visible_issue": a.visible_issue,
                 "object_part": a.object_part,
                 "severity": a.severity,
-                "visible_damage": a.visible_damage,
+                "visible_damage": bool(a.visible_damage),
                 "image_quality": a.image_quality,
-                "wrong_object": a.wrong_object,
+                "wrong_object": bool(a.wrong_object),
                 "explanation": a.explanation,
-                "blur_score": a.blur_score,
-                "is_blurry": a.is_blurry,
+                "blur_score": float(a.blur_score) if a.blur_score is not None else None,
+                "is_blurry": bool(a.is_blurry),
             }
             for a in c.image_analyses
         ]
