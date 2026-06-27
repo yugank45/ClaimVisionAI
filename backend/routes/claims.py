@@ -4,9 +4,10 @@ Handles upload, processing, retrieval, and download.
 """
 import threading
 import logging
+import time
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Query, BackgroundTasks
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Query, BackgroundTasks, Header
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from typing import Optional
@@ -28,6 +29,11 @@ router = APIRouter()
 
 # Track background processing thread
 _processing_thread: Optional[threading.Thread] = None
+
+# Rate-limiting state
+_last_completed_at: Optional[float] = None
+COOLDOWN_SECONDS = 60
+MAX_CLAIMS_CAP = 100
 
 
 class ProcessRequest(BaseModel):
@@ -142,10 +148,22 @@ async def upload_dataset_route(
 
 
 @router.post("/process-claims")
-async def process_claims_route(request: ProcessRequest, background_tasks: BackgroundTasks):
+async def process_claims_route(
+    request: ProcessRequest,
+    background_tasks: BackgroundTasks,
+    x_claimvision_session: Optional[str] = Header(None),
+):
     """Start processing claims in the background."""
-    global _processing_thread
+    global _processing_thread, _last_completed_at
 
+    # Guard 1: require a session header (must come from the signed-in UI)
+    if not x_claimvision_session:
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication required. Sign in to start processing.",
+        )
+
+    # Guard 2: block concurrent runs
     status = get_processing_status()
     if status["is_processing"]:
         return {
@@ -158,17 +176,34 @@ async def process_claims_route(request: ProcessRequest, background_tasks: Backgr
             "output_file": None,
         }
 
+    # Guard 3: enforce cooldown between runs
+    if _last_completed_at is not None:
+        elapsed = time.time() - _last_completed_at
+        remaining = COOLDOWN_SECONDS - elapsed
+        if remaining > 0:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Please wait {int(remaining) + 1}s before starting another run.",
+            )
+
+    # Guard 4: cap max_claims server-side
+    if request.max_claims is not None and request.max_claims > MAX_CLAIMS_CAP:
+        request.max_claims = MAX_CLAIMS_CAP
+        logger.warning(f"max_claims capped at {MAX_CLAIMS_CAP}")
+
     clear_claims()
 
     # Run processing in background thread to avoid blocking the event loop
     result_holder = {}
 
     def run_processing():
+        global _last_completed_at
         result = process_claims(
             dataset=request.dataset,
             max_claims=request.max_claims,
         )
         result_holder.update(result)
+        _last_completed_at = time.time()
 
     _processing_thread = threading.Thread(target=run_processing, daemon=True)
     _processing_thread.start()

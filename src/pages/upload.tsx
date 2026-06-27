@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { useGetDatasetInfo, useProcessClaims, getGetDatasetInfoQueryKey } from "@workspace/api-client-react"
+import { useAuth } from "@/context/auth"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
@@ -37,8 +38,11 @@ export default function Upload() {
   const [, setLocation] = useLocation()
   const { toast } = useToast()
   const queryClient = useQueryClient()
+  const { user } = useAuth()
   const { data: datasetInfo, isLoading: isLoadingDataset, refetch: refetchDatasetInfo } = useGetDatasetInfo()
-  const processMutation = useProcessClaims()
+  const processMutation = useProcessClaims({
+    request: { headers: { "X-ClaimVision-Session": user?.email ?? "" } },
+  })
 
   const [maxClaims, setMaxClaims] = useState<string>("")
   const [coverage, setCoverage] = useState<CoverageReport | null>(null)
