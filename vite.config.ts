@@ -23,5 +23,8 @@ export default defineConfig({
         changeOrigin: true,
       },
     },
+    watch: {
+      ignored: ["**/.local/**", "**/node_modules/**", "**/dataset/**", "**/output/**"],
+    },
   },
 });

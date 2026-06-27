@@ -43,12 +43,12 @@ function Router() {
       <Route>
         <AppLayout>
           <Switch>
-            <Route path="/" component={() => <ProtectedRoute component={Home} />} />
-            <Route path="/upload" component={() => <ProtectedRoute component={Upload} />} />
-            <Route path="/processing" component={() => <ProtectedRoute component={Processing} />} />
-            <Route path="/claims" component={() => <ProtectedRoute component={Claims} />} />
-            <Route path="/claims/:id" component={() => <ProtectedRoute component={ClaimDetail} />} />
-            <Route path="/analytics" component={() => <ProtectedRoute component={Analytics} />} />
+            <Route path="/"><ProtectedRoute component={Home} /></Route>
+            <Route path="/upload"><ProtectedRoute component={Upload} /></Route>
+            <Route path="/processing"><ProtectedRoute component={Processing} /></Route>
+            <Route path="/claims/:id"><ProtectedRoute component={ClaimDetail} /></Route>
+            <Route path="/claims"><ProtectedRoute component={Claims} /></Route>
+            <Route path="/analytics"><ProtectedRoute component={Analytics} /></Route>
             <Route component={NotFound} />
           </Switch>
         </AppLayout>
